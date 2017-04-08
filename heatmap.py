@@ -688,13 +688,15 @@ class ImageSeriesMaker():
         return matrix
 
 
-def _get_osm_image(bbox, zoom, osm_base):
+def _get_osm_image(bbox, zoom, osm_base, osm_url=None, osm_scale=1):
     # Just a wrapper for osm.createOSMImage to translate coordinate schemes
     try:
         from osmviz.manager import PILImageManager, OSMManager
         osm = OSMManager(
             image_manager=PILImageManager('RGB'),
-            server=osm_base)
+            server=osm_base,
+            url=osm_url,
+            scale=osm_scale)
         (c1, c2) = bbox.corners()
         image, bounds = osm.createOSMImage((c1.lat, c2.lat, c1.lon, c2.lon),
                                            zoom)
@@ -725,7 +727,7 @@ def choose_osm_zoom(config, padding):
     crazy_zoom_level = 30
     proj = MercatorProjection()
     scale = _scale_for_osm_zoom(crazy_zoom_level)
-    proj.pixels_per_degree = scale
+    proj.pixels_per_degree = scale * config.osm_scale
     bbox_crazy_xy = config.extent_in.map(proj.project)
     if config.width:
         size_ratio = width_ratio = (
@@ -749,12 +751,13 @@ def choose_osm_zoom(config, padding):
 def get_osm_background(config, padding):
     zoom = choose_osm_zoom(config, padding)
     proj = MercatorProjection()
-    proj.pixels_per_degree = _scale_for_osm_zoom(zoom)
+    proj.pixels_per_degree = _scale_for_osm_zoom(zoom) * config.osm_scale
     bbox_xy = config.extent_in.map(proj.project)
     # We're not checking that the padding fits within the specified size.
     bbox_xy.grow(padding)
     bbox_ll = bbox_xy.map(proj.inverse_project)
-    image, img_bbox_ll = _get_osm_image(bbox_ll, zoom, config.osm_base)
+    image, img_bbox_ll = _get_osm_image(bbox_ll, zoom, config.osm_base,
+                                        config.osm_url, config.osm_scale)
     img_bbox_xy = img_bbox_ll.map(proj.project)
 
     # TODO: this crops to our data extent, which means we're not making
@@ -970,6 +973,8 @@ class Configuration(object):
         # OpenStreetMap background tiles
         'osm': 'True/False; see command line options',
         'osm_base': '',
+        'osm_url': '',
+        'osm_scale': '',
         'zoom': '',
 
         # These are for making an animation, ignored otherwise.
@@ -1118,8 +1123,17 @@ class Configuration(object):
             default='http://tile.openstreetmap.org',
             help='Base URL for map tiles; default %(default)s')
         parser.add_argument(
+            '--osm_url', metavar='URL',
+            help=('Full URL pattern for map tiles, takes precedence over '
+                  'osm_base'))
+        parser.add_argument(
             '-z', '--zoom', type=int,
             help='Zoom level for OSM; 0 (the default) means autozoom')
+        parser.add_argument(
+            '--osm_scale', type=int, default=1,
+            help=(
+                'High-resolution scale for OSM; 1 (the default) means standard '
+                'resolution'))
         parser.add_argument('-v', '--verbose', action='store_true')
         parser.add_argument('--debug', action='store_true')
         parser.add_argument('--version', action='version',
